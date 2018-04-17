@@ -16,14 +16,14 @@ package com.github.heinika;
  * limitations under the License.
  */
 
-import android.app.ActivityManager;
-import android.app.Application;
+import android.content.Context;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
 import android.os.Build;
 import android.support.annotation.NonNull;
 import android.text.Editable;
+import android.text.Html;
 import android.text.Layout;
 import android.text.Spannable;
 import android.text.SpannableStringBuilder;
@@ -47,6 +47,7 @@ import android.text.style.SuperscriptSpan;
 import android.text.style.TypefaceSpan;
 import android.text.style.URLSpan;
 import android.text.style.UnderlineSpan;
+import android.util.TypedValue;
 
 import org.xml.sax.Attributes;
 import org.xml.sax.ContentHandler;
@@ -69,7 +70,9 @@ import java.util.regex.Pattern;
  * This class processes HTML strings into displayable styled text.
  * Not all HTML tags are supported.
  */
-public class Html {
+public class BalloonHtml {
+    private static Context mContext;
+
     /**
      * Retrieves images for HTML &lt;img&gt; tags.
      */
@@ -83,7 +86,7 @@ public class Html {
          * setBounds() on your Drawable if it doesn't already have
          * its bounds set.
          */
-        public Drawable getDrawable(String source, int width, int height);
+        public Drawable getDrawable(String source);
     }
 
     /**
@@ -180,18 +183,17 @@ public class Html {
      */
     private static final int TO_HTML_PARAGRAPH_FLAG = 0x00000001;
 
-    private Html() {
+    private BalloonHtml() {
     }
 
     /**
      * Returns displayable styled text from the provided HTML string with the legacy flags
      * {@link #FROM_HTML_MODE_LEGACY}.
      *
-     * @deprecated use {@link #fromHtml(String, int)} instead.
+     * @deprecated use {@link #fromHtml(Context context,String, int)} instead.
      */
-    @Deprecated
-    public static Spanned fromHtml(String source) {
-        return fromHtml(source, FROM_HTML_MODE_LEGACY, null, null);
+    public static Spanned fromHtml(Context context,String source) {
+        return fromHtml(context,source, FROM_HTML_MODE_LEGACY, null, null);
     }
 
     /**
@@ -201,8 +203,8 @@ public class Html {
      * <p>
      * <p>This uses TagSoup to handle real HTML, including all of the brokenness found in the wild.
      */
-    public static Spanned fromHtml(String source, int flags) {
-        return fromHtml(source, flags, null, null);
+    public static Spanned fromHtml(Context context,String source, int flags) {
+        return fromHtml(context,source, flags, null, null);
     }
 
     /**
@@ -228,14 +230,18 @@ public class Html {
         }
     }
 
+
+    public static Spanned fromHtml(Context context,String source, BalloonHtml.ImageGetter imageGetter) {
+        return fromHtml(context,source, FROM_HTML_MODE_LEGACY, imageGetter, null);
+    }
     /**
      * Returns displayable styled text from the provided HTML string with the legacy flags
      * {@link #FROM_HTML_MODE_LEGACY}.
      * <p>
      * use {@link (String, int, android.text.Html.ImageGetter, android.text.Html.TagHandler)} instead.
      */
-    public static Spanned fromHtml(String source, Html.ImageGetter imageGetter, android.text.Html.TagHandler tagHandler) {
-        return fromHtml(source, FROM_HTML_MODE_LEGACY, imageGetter, tagHandler);
+    public static Spanned fromHtml(Context context,String source, BalloonHtml.ImageGetter imageGetter, android.text.Html.TagHandler tagHandler) {
+        return fromHtml(context,source, FROM_HTML_MODE_LEGACY, imageGetter, tagHandler);
     }
 
     /**
@@ -246,8 +252,9 @@ public class Html {
      * <p>
      * <p>This uses TagSoup to handle real HTML, including all of the brokenness found in the wild.
      */
-    public static Spanned fromHtml(String source, int flags, Html.ImageGetter imageGetter,
+    public static Spanned fromHtml(Context context,String source, int flags, BalloonHtml.ImageGetter imageGetter,
                                    android.text.Html.TagHandler tagHandler) {
+        mContext =context;
         String schemaProperty = "http://www.ccil.org/~cowan/tagsoup/properties/schema";
         XMLReader parser = null;
         try {
@@ -271,7 +278,7 @@ public class Html {
         }
 
         HtmlToSpannedConverter converter =
-                new HtmlToSpannedConverter(source, imageGetter, tagHandler, parser, flags);
+                new HtmlToSpannedConverter(mContext,source, imageGetter, tagHandler, parser, flags);
         return converter.convert();
     }
 
@@ -705,7 +712,7 @@ class HtmlToSpannedConverter implements ContentHandler {
     private String mSource;
     private XMLReader mReader;
     private SpannableStringBuilder mSpannableStringBuilder;
-    private Html.ImageGetter mImageGetter;
+    private BalloonHtml.ImageGetter mImageGetter;
     private android.text.Html.TagHandler mTagHandler;
     private int mFlags;
 
@@ -761,7 +768,9 @@ class HtmlToSpannedConverter implements ContentHandler {
         return sTextDecorationPattern;
     }
 
-    public HtmlToSpannedConverter(String source, Html.ImageGetter imageGetter,
+    private static Context mContext;
+
+    public HtmlToSpannedConverter(Context context,String source, BalloonHtml.ImageGetter imageGetter,
                                   android.text.Html.TagHandler tagHandler, XMLReader parser, int flags) {
         mSource = source;
         mSpannableStringBuilder = new SpannableStringBuilder();
@@ -769,7 +778,10 @@ class HtmlToSpannedConverter implements ContentHandler {
         mTagHandler = tagHandler;
         mReader = parser;
         mFlags = flags;
+        mContext = context;
     }
+
+
 
     public Spanned convert() {
 
@@ -1146,31 +1158,37 @@ class HtmlToSpannedConverter implements ContentHandler {
         }
     }
 
-    private static void startImg(Editable text, Attributes attributes, Html.ImageGetter img) {
+    private static void startImg(Editable text, Attributes attributes, BalloonHtml.ImageGetter img) {
         String src = attributes.getValue("", "src");
         String width = attributes.getValue("", "width");
         String height = attributes.getValue("", "height");
-        int h = 0;
-        int w = 0;
-        if (width != null) {
-            w = Integer.parseInt(width);
-        }
-        if (height != null) {
-            h = Integer.parseInt(height);
-        }
         Drawable d = null;
 
         if (img != null) {
-            d = img.getDrawable(src, w, h);
+            d = img.getDrawable(src);
         }
 
         if (d != null) {
+            int h = d.getIntrinsicWidth();
+            int w = d.getIntrinsicHeight();
+            if (width != null) {
+                w = dpTopx(Float.parseFloat(width));
+            }
+            if (height != null) {
+                h = dpTopx(Float.parseFloat(height));
+            }
+
             int len = text.length();
             text.append("\uFFFC");
-
+            d.setBounds(0, 0, w, h);
             text.setSpan(new ImageSpan(d, src), len, text.length(),
                     Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
         }
+    }
+
+    public static int dpTopx(float dp){
+        return (int) TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, dp,
+                mContext.getResources().getDisplayMetrics());
     }
 
     private static Stack<String> sizeStack;
@@ -1223,9 +1241,19 @@ class HtmlToSpannedConverter implements ContentHandler {
         if (!isEmpty(sizeStack)) {
             String size = sizeStack.pop();
             if (!TextUtils.isEmpty(size)) {
-                text.setSpan(new AbsoluteSizeSpan(Integer.parseInt(size)), startIndex, text.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                text.setSpan(new AbsoluteSizeSpan(spTopx(Float.parseFloat(size))), startIndex, text.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
             }
         }
+    }
+
+    /**
+     * 将sp转换为px
+     * @param sp
+     * @return
+     */
+    public static int spTopx(float sp){
+        final float fontScale = mContext.getResources().getDisplayMetrics().scaledDensity;
+        return (int) (sp * fontScale + 0.5);
     }
 
     public static boolean isEmpty(Collection collection) {
